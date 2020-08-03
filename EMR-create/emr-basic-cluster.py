@@ -199,16 +199,16 @@ cluster_id = connection.run_job_flow(
     BootstrapActions=get_BootstrapActions(),
     ServiceRole='arn:aws:iam::030743829926:role/EMRCreateTestRole',
     JobFlowRole='EMRCreateTestRole',
-    Steps=[
-        {
-            'Name': 'file-copy-step',
-                    'ActionOnFailure': 'CONTINUE',
-                    'HadoopJarStep': {
-                        'Jar': 's3://kula-emr-test/jars/CopyFilesS3-1.0-SNAPSHOT-jar-with-dependencies.jar',
-                        'Args': ['test.xml', 'kula-emr-test', 'kula-emr-test-2']
-                    }
-        }
-    ],
+    # Steps=[
+    #     {
+    #         'Name': 'file-copy-step',
+    #                 'ActionOnFailure': 'CONTINUE',
+    #                 'HadoopJarStep': {
+    #                     'Jar': 's3://kula-emr-test/jars/CopyFilesS3-1.0-SNAPSHOT-jar-with-dependencies.jar',
+    #                     'Args': ['test.xml', 'kula-emr-test', 'kula-emr-test-2']
+    #                 }
+    #     }
+    # ],
     Tags=[
         {
             'Key': 'tag_name_1',
