@@ -1,29 +1,33 @@
 import boto3
-from datetime import datetime
-from botocore.client import Config
-from botocore.exceptions import ClientError
-from dateutil.tz import tzutc
 import json
+from datetime import datetime
 
-#profiles = ['sandbox-access']
-myconfig = Config(region_name='us-east-1')
-#session = boto3.Session(profile_name=profiles[0])
-
-ec2_client = boto3.client('ec2', config=myconfig)
-emr_client = boto3.client('emr', config=myconfig)
-s3_client = boto3.resource('s3', config=myconfig)
-cloudtrail_client = boto3.client('cloudtrail', config=myconfig)
+connection = boto3.client('emr', region_name='us-east-1')
+ec2_client = boto3.client('ec2', region_name='us-east-1')
+s3Client = boto3.resource('s3', region_name='us-east-1')
+cloudtrail_client = boto3.client('cloudtrail', region_name='us-east-1')
 paginator = cloudtrail_client.get_paginator('lookup_events')
 
-# Fetching the configuration json file from S3
-# The bucket name and file name will be taken from the arguments
-content_object = s3_client.Object('testcf-lambda-functions',
+content_object = s3Client.Object('testcf-lambda-functions',
                                   'test-cluster-config.json')
 file_content = content_object.get()['Body'].read().decode('utf-8')
 s3_config = json.loads(file_content)
 
-print("s3-config", s3_config)
 
+def get_BootstrapActions():
+    actionsList = s3_config['bootstrap-actions']
+    actions = []
+    for item in actionsList:
+        actions.append({
+            "Name": item['Name'],
+            "ScriptBootstrapAction": {
+                "Path": item['Path'],
+                "Args": item.setdefault('Args', [])
+            }
+        })
+    return actions
+
+print(get_BootstrapActions())
 
 # Extracting suitable spot instances from the response
 def find_suitable_instances(response):
@@ -65,15 +69,10 @@ def find_suitable_instances(response):
 def fetch_current_spotPrices():
     response = ec2_client.describe_spot_price_history(
         # More instance types can be added here
-        InstanceTypes=["m1.large", "m1.medium"],
+        InstanceTypes=["m1.medium", "m1.small"],
         StartTime=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         ProductDescriptions=['Linux/UNIX'])
     return find_suitable_instances(response)
-
-
-# Not needed right now
-def get_instance_groups():
-    return
 
 
 def form_best_instance_fleet():
@@ -91,7 +90,7 @@ def form_best_instance_fleet():
         1,
         "InstanceTypeConfigs": [
             {
-                "InstanceType": "m1.medium",
+                "InstanceType": "m4.large",
                 "EbsConfiguration": {
                     "EbsBlockDeviceConfigs": [{
                         "VolumeSpecification": {
@@ -114,7 +113,7 @@ def form_best_instance_fleet():
         "TargetOnDemandCapacity":
         1,
         "InstanceTypeConfigs": [{
-            "InstanceType": "m1.medium",
+            "InstanceType": "m4.large",
             "EbsConfiguration": {
                 "EbsBlockDeviceConfigs": [{
                     "VolumeSpecification": {
@@ -171,85 +170,56 @@ def form_best_instance_fleet():
     return [master_node, core_node, task_node]
 
 
-# Forming steps config as per the s3 configuration file
-def get_steps():
-    steps = s3_config['Steps']
-    finalSteps = []
-    for item in steps:
-        finalSteps.append({
-            "Name": item['Name'],
-            "ActionOnFailure": "CONTINUE",
-            "HadoopJarStep": {
-                "Jar": item['Jar'],
-                "Args": item['Args']
-            }
-        })
-    return finalSteps
+print(form_best_instance_fleet())
 
 
-# Forming required bootstrap actions as per the s3 configuration file
-def get_BootstrapActions():
-    actionsList = s3_config['bootstrap-actions']
-    actions = []
-    for item in actionsList:
-        actions.append({
-            "Name": item['Name'],
-            "ScriptBootstrapAction": {
-                "Path": item['Path'],
-                "Args": item.setdefault('Args', [])
-            }
-        })
-    return actions
-
-
-# Setting tag list from s3 configuration file in addition to the below default tags
-def get_tags():
-    tags = {
-        "OSType": "AmazonLinux",
-        "ServiceType": "App",
-        "BusinessImpact": "Low",
-        "BusinessUnit": "FrontOffice",
-        "Project": "MemberDataAggregation",
-        "Transient": "true",
-        "AppName": "MemberDataAggregation",
-    }
-    tags.update(s3_config['tags'])
-    tagList = []
-    for key in tags:
-        tagList.append({"Key": key, "Value": tags[key]})
-    return tagList
-
-
-# Creating cluster with all the above configurations
-cluster = emr_client.run_job_flow(
-    Name=s3_config['Name'],
-    #LogUri=s3_config['logs_s3_url'],
-    ServiceRole=s3_config.setdefault('service-role-arn', ''),
-    JobFlowRole='EMRCreateTestRole',
-    ScaleDownBehavior="TERMINATE_AT_TASK_COMPLETION",
+cluster_id = connection.run_job_flow(
+    Name='test_emr_job_boto3',
     ReleaseLabel='emr-5.26.0',
-    # Ec2SubnetIds=s3_config.setdefault('Ec2SubnetIds', []),
-    Instances={
-        # "InstanceGroups": get_instance_groups(),
-        "InstanceFleets": form_best_instance_fleet(),
-    },
-    Steps=get_steps(),
-    BootstrapActions=get_BootstrapActions(),
+    LogUri=s3_config['logs_s3_url'],
     Applications=[
-        {
+	{
             'Name': 'Ganglia',
         },
         {
-            'Name': 'Spark',
+            'Name': 'Spark'
+        }
+    ],
+    Instances={
+	"InstanceFleets": form_best_instance_fleet(),
+        'Ec2KeyName':
+        'emt-test-new-putty',
+        'KeepJobFlowAliveWhenNoSteps':
+        True,
+        'TerminationProtected':
+        False,
+        "Ec2SubnetIds": ["subnet-0dd044f0aeb61f951"],
+    },
+    VisibleToAllUsers=True,
+    BootstrapActions=get_BootstrapActions(),
+    ServiceRole='arn:aws:iam::030743829926:role/EMRCreateTestRole',
+    JobFlowRole='EMRCreateTestRole',
+    Steps=[
+        {
+            'Name': 'file-copy-step',
+                    'ActionOnFailure': 'CONTINUE',
+                    'HadoopJarStep': {
+                        'Jar': 's3://kula-emr-test/jars/CopyFilesS3-1.0-SNAPSHOT-jar-with-dependencies.jar',
+                        'Args': ['test.xml', 'kula-emr-test', 'kula-emr-test-2']
+                    }
+        }
+    ],
+    Tags=[
+        {
+            'Key': 'tag_name_1',
+            'Value': 'tab_value_1',
+        },
+        {
+            'Key': 'tag_name_2',
+            'Value': 'tag_value_2',
         },
     ],
-    Tags=get_tags(),
-    # ManagedScalingPolicy={},
 )
-print(cluster)
-print('cluster created :', cluster['JobFlowId'])
 
-
-
-
+print('cluster created with the step...', cluster_id['JobFlowId'])
 
