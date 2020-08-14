@@ -203,7 +203,6 @@ cluster_id = connection.run_job_flow(
     #     {
     #         'Name': 'file-copy-step',
     #                 'ActionOnFailure': 'CONTINUE',
-    #                 'HadoopJarStep': {
     #                     'Jar': 's3://kula-emr-test/jars/CopyFilesS3-1.0-SNAPSHOT-jar-with-dependencies.jar',
     #                     'Args': ['test.xml', 'kula-emr-test', 'kula-emr-test-2']
     #                 }
@@ -222,4 +221,5 @@ cluster_id = connection.run_job_flow(
 )
 
 print('cluster created with the step...', cluster_id['JobFlowId'])
+
 
