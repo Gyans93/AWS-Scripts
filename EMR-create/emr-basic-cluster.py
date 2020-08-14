@@ -1,7 +1,7 @@
 import boto3
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 today = datetime.now()
 
 connection = boto3.client('emr', region_name='us-east-1')
