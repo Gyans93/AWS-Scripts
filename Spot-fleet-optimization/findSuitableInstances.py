@@ -68,6 +68,7 @@ def find_suitable_instances(response):
                                                              0) + 1
                 pricingDict[instanceType]['failCount'] = count
                 # Removing instances which failed more than 100 times in past week
+                print("Following spot instances failed more than 100 times in the past week:")
                 if count > 100:
                     print(instanceType)
                     del pricingDict[instanceType]
@@ -100,16 +101,21 @@ def list_existing_clusters():
         StartTime=today - timedelta(days=7),
         EndTime=today,
     )
-    # print(res['Events'][1])
     existingInstances = {}
     for event in res['Events']:
         eventJson = json.loads(event['CloudTrailEvent'])
-        # print(eventJson)
-        instances = eventJson['requestParameters']['instances']
-        task_node = next((node for node in instances['instanceFleets']
+        reqParams = eventJson.setdefault('requestParameters', {})
+        if reqParams is None:
+            return existingInstances
+        instances = reqParams.setdefault('instances', {})
+        instanceFleets = instances.setdefault('instanceFleets', [])
+        task_node = next((node for node in instanceFleets
                           if node['instanceFleetType'] == "TASK"), None)
         # print(task_node)
-        for node in task_node['instanceTypeConfigs']:
+        if task_node is None:
+            return existingInstances
+        instanceConfigs = task_node.setdefault('instanceTypeConfigs', [])
+        for node in instanceConfigs:
             existingInstances.setdefault(node['instanceType'],
                                          set()).add(node['bidPrice'])
     return existingInstances
